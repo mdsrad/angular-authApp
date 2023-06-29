@@ -21,7 +21,17 @@ export class AuthService {
   public currentUser = computed( () => this._currentUser() );
   public authStatus = computed( () => this._authStatus() );
 
-  constructor() { }
+  constructor() {
+    this.checkAuthStarus().subscribe();
+   }
+
+  private setAuthentication(user: User, token: string): boolean{
+      this._currentUser.set( user );
+      this._authStatus.set( AuthStatus.authenticated );
+      localStorage.setItem('token', token);
+
+      return true;
+  }
 
   login( email: string, password: string ): Observable<boolean>{
 
@@ -30,18 +40,9 @@ export class AuthService {
 
     return this.http.post<LoginResponse>( url, body )
     .pipe(
-      tap(({ user, token }) => {
-        this._currentUser.set( user );
-        this._authStatus.set( AuthStatus.authenticated );
-        localStorage.setItem('token', token);
-        console.log({ user, token })
-      }),
-      map( () => true),
+      map( ({ user, token }) => this.setAuthentication( user, token )),
       //TODO errores
-      catchError( err => {
-        console.log(err)
-        return throwError( () => 'Algo salió mal');
-      })
+      catchError( err => throwError( () => 'Algo salió mal'))
     );
   }
 
@@ -49,25 +50,29 @@ export class AuthService {
     const url   = `${ this.baseUrl }/auth/ckeck-token`;
     const token = localStorage.getItem('token')
 
-    if ( !token ) return of( false );
+    if ( !token ) {
+      this.logout();
+      return of( false )
+    };
 
     const headers = new HttpHeaders()
     .set('Authorization', `Bearer ${ token }`);
 
     return this.http.get<CheckTokenResponse>( url, { headers })
       .pipe(
-        map( ({ token, user }) => {
-          this._currentUser.set( user );
-          this._authStatus.set( AuthStatus.authenticated );
-          localStorage.setItem('token', token);
-          return true;
-        }),
-
+        map( ({ user, token }) => this.setAuthentication( user, token )),
         //error
         catchError( () => {
           this._authStatus.set( AuthStatus.notAuthenticated )
           return of(false)
         })
       );
+  }
+
+
+  logout(){
+    localStorage.removeItem('token');
+    this._currentUser.set(null);
+    this._authStatus.set( AuthStatus.notAuthenticated );
   }
 }
